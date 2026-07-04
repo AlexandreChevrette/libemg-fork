@@ -1056,7 +1056,9 @@ class OnlineEMGClassifier(OnlineStreamer):
                 return
             
     def _get_data_helper(self):
-        data, counts = self.odh.get_data(N=self.window_size)
+        ## Modified to only get EMG modality instead of all data
+
+        data, counts = self.odh.get_data_emg(N=self.window_size)
         for key in data.keys():
             data[key] = data[key][::-1]
         return data, counts

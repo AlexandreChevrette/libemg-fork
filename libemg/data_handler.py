@@ -18,14 +18,13 @@ from matplotlib import pyplot
 from matplotlib.animation import FuncAnimation
 from pathlib import Path
 from glob import glob
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 from multiprocessing import Process, Event
 from libemg.feature_extractor import FeatureExtractor
 from libemg.shared_memory_manager import SharedMemoryManager
 from scipy.signal import welch
 from libemg.utils import get_windows, _get_fn_windows, _get_mode_windows, make_regex
 
-#testo
 
 class RegexFilter:
     """
@@ -1086,8 +1085,44 @@ class OnlineDataHandler(DataHandler):
             animation = FuncAnimation(fig, update, interval=(1000/sampling_rate * window_increment))
             plt.show()
 
+    def get_data_emg(self, N=0, filter=True):
+        """Grab the EMG data in the shared memory buffer. 
+ 
+        Parameters
+        ----------
+        N : int
+            Number of samples to grab from the shared memory items. If zero, grabs all data.
+        filter: bool
+            Apply the installed filters to the data prior to returning or not.
+ 
+        Returns
+        ----------
+        val: dict
+            A dictionary with keys corresponding to the modalities. Each key will have a np.ndarray of data returned.
+        count: dict
+            A dictionary with keys corresponding to the modalities. Each key will have an int corresponding to the number
+            of samples received since the streamer began (or the last reset call).
+        """
+        val   = {}
+        count = {}
+        mod  = "emg"
+            
+        data = self.smm.get_variable(mod)
+        if filter:
+            if self.fi is not None:
+                if mod == "emg": # TODO: enable filter for each modality
+                    data = self.fi.filter(data)
+        if N != 0:
+            val[mod]   = data[:N,:]
+        else:
+            val[mod]   = data[:,:]
+        if self.channel_mask is not None:
+            val[mod] = val[mod][:, self.channel_mask]
+        count[mod] = self.smm.get_variable(mod+"_count")
+        return val,count
+
     def get_data(self, N=0, filter=True):
-        """Grab the data in the shared memory buffer across all modalities.
+        """Grab the data in the shared memory buffer.
  
         Parameters
         ----------
@@ -1107,6 +1142,7 @@ class OnlineDataHandler(DataHandler):
         val   = {}
         count = {}
         for mod in self.modalities:
+            
             data = self.smm.get_variable(mod)
             if filter:
                 if self.fi is not None:
@@ -1120,6 +1156,7 @@ class OnlineDataHandler(DataHandler):
                 val[mod] = val[mod][:, self.channel_mask]
             count[mod] = self.smm.get_variable(mod+"_count")
         return val,count
+
 
     def reset(self, modality=None):
         """Reset the data within the shared memory buffer.
@@ -1137,29 +1174,23 @@ class OnlineDataHandler(DataHandler):
             self.smm.modify_variable(mod, lambda x: np.zeros_like(x))
             self.smm.modify_variable(mod+"_count", lambda x: np.zeros_like(x))
 
-    def log_to_file(self, block=False, file_path='', timestamps=True):
-        """Logs the raw data being read to a file.
+    def log_to_data_hub(self, dataHubConnexion : Queue):
+        """Log the data to the data hub.
 
         Parameters
         ----------
-        block: bool (optional), default=False 
-            If true, the main thread will be blocked. 
-        file_path: int (optional), default=''
-            The prefix to the file path that will be logged for each modality.
-        timestamps: bool (optional), default=True
-            If true, this will log the timestamps with each recording.
+        dataHubConnexion: multiprocessing.Queue
+            The queue that will be used to send the data to the data hub.
         """
-        print("ODH->log_to_file begin.")
-        self.file_path = file_path
-        self.timestamps = timestamps
-        if block:
-            self._log_to_file()
-            print("ODH->log_to_file ended.")
-        else:
-            p = Process(target=self._log_to_file, daemon=True)
-            p.start()
 
-    def _log_to_file(self):
+
+        print("ODH->log_to_data_hub begin.")
+        self.dataHubConnexion = dataHubConnexion
+
+        p = Process(target=self._log_to_data_hub, daemon=True)
+        p.start()
+
+    def _log_to_data_hub(self):
 
         files = {}
         # start shared memory manager to access sensor
@@ -1171,21 +1202,25 @@ class OnlineDataHandler(DataHandler):
         for m in self.modalities:
             last_count[m] = 0
         while True:
-            timestamp = time.time()
             vals, counts = self.get_data(N=0, filter=False)
-            for m in vals.keys():
-                new_count       = counts[m][0,0]
-                num_new_samples = new_count - last_count[m]
-                new_samples     = vals[m][:num_new_samples,:]
-                last_count[m] = new_count
+            for mod in vals.keys():
+                if mod.endswith("_count"):
+                    continue
+                new_count       = counts[mod][0,0]
+                num_new_samples = new_count - last_count[mod]
+                new_samples     = vals[mod][:num_new_samples,:]
+                last_count[mod] = new_count
                 if num_new_samples:
-                    if not m in files.keys():
-                        files[m] = open(self.file_path + m + '.csv', "a", newline='')
-                    if self.timestamps:
-                        np.savetxt(files[m], np.hstack((np.ones((new_samples.shape[0],1))*timestamp, new_samples)))
-                        # check to see if they're in the right order, or if they need to be reversed again!
-                    else:
-                        np.savetxt(files[m], new_samples)
+                    ## TODO: check if all keys are necessary
+                    self.dataHubConnexion.put(
+                        {
+                            "command": "SET",
+                            "sender": "ODH",
+                            "key": mod,
+                            "value": new_samples,
+                            "timestamp": time.perf_counter()
+                        })
+
             if self.log_signal.is_set():
                 print("ODH->log_to_file ended.")
                 break
