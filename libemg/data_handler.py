@@ -1204,7 +1204,7 @@ class OnlineDataHandler(DataHandler):
         while True:
             vals, counts = self.get_data(N=0, filter=False)
             for mod in vals.keys():
-                if mod.endswith("_count"):
+                if mod.endswith("_count") or mod.endswith("sample_id"):
                     continue
                 new_count       = counts[mod][0,0]
                 num_new_samples = new_count - last_count[mod]
@@ -1217,7 +1217,7 @@ class OnlineDataHandler(DataHandler):
                             "command": "SET",
                             "sender": "ODH",
                             "key": mod,
-                            "value": new_samples,
+                            "value": new_samples.tolist(),
                             "timestamp": time.perf_counter()
                         })
 
