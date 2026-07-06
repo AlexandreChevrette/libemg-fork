@@ -647,7 +647,7 @@ class OnlineStreamer(ABC):
 
         required_smm_items = [  # these tags are also required
             ["adapt_flag", (1,1), np.int32],
-            ["active_flag", (1,1), np.int8]
+            ["active_flag", (1,1), np.int8],
         ]
         current_smm_tags = [item[0] for item in smm_items]
         for smm_item in required_smm_items:

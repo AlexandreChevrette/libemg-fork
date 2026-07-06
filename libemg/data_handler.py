@@ -1146,7 +1146,7 @@ class OnlineDataHandler(DataHandler):
             data = self.smm.get_variable(mod)
             if filter:
                 if self.fi is not None:
-                    if mod == "emg": # TODO: enable filter for each modality
+                    if mod == "emg":
                         data = self.fi.filter(data)
             if N != 0:
                 val[mod]   = data[:N,:]
@@ -1174,6 +1174,8 @@ class OnlineDataHandler(DataHandler):
             self.smm.modify_variable(mod, lambda x: np.zeros_like(x))
             self.smm.modify_variable(mod+"_count", lambda x: np.zeros_like(x))
 
+
+    ## TODO :: move the log to data hub to avoid sending too much data over queue.
     def log_to_data_hub(self, dataHubConnexion : Queue):
         """Log the data to the data hub.
 
@@ -1204,14 +1206,13 @@ class OnlineDataHandler(DataHandler):
         while True:
             vals, counts = self.get_data(N=0, filter=False)
             for mod in vals.keys():
-                if mod.endswith("_count") or mod.endswith("sample_id"):
+                if mod.endswith("sample_id"):
                     continue
                 new_count       = counts[mod][0,0]
                 num_new_samples = new_count - last_count[mod]
-                new_samples     = vals[mod][:num_new_samples,:]
+                new_samples     = vals[mod][:1,:] # grab the lastest sample
                 last_count[mod] = new_count
                 if num_new_samples:
-                    ## TODO: check if all keys are necessary
                     self.dataHubConnexion.put(
                         {
                             "command": "SET",
@@ -1222,7 +1223,7 @@ class OnlineDataHandler(DataHandler):
                         })
 
             if self.log_signal.is_set():
-                print("ODH->log_to_file ended.")
+                print("ODH->log_to_data_hub ended.")
                 break
 
     def _check_streaming(self, timeout=15):
@@ -1235,7 +1236,3 @@ class OnlineDataHandler(DataHandler):
             if time.time() - wt > timeout:
                 print("Not reading any data.... Check hardware connection.")
                 return False
-            
-    def start_listening(self):
-        print("LibEMG>v1.0 no longer requires online_data_handler.start_listening().\nThis is deprecated.")
-        pass
