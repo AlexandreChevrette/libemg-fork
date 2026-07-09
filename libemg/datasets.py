@@ -15,7 +15,7 @@ from libemg._datasets.hyser import Hyser1DOF, HyserNDOF, HyserRandom, HyserPR, H
 from libemg._datasets.kaufmann_md import KaufmannMD
 from libemg._datasets.tmr_shirleyryanabilitylab import TMR_Post, TMR_Pre
 from libemg.feature_extractor import FeatureExtractor
-from libemg.emg_predictor import EMGClassifier, EMGRegressor
+from libemg.emg_predictor import EMGClassifier
 from libemg.offline_metrics import OfflineMetrics
 from libemg.filtering import Filter
 from libemg._datasets.emg2pose import EMG2POSEUD, EMG2POSECU
@@ -217,8 +217,6 @@ def evaluate(model, window_size, window_inc, feature_list=['MAV'], feature_dic={
 
             if not regression:
                 clf = EMGClassifier(model)
-            else:
-                clf = EMGRegressor(model)
             clf.fit(ds)
             
             if regression:
@@ -336,8 +334,7 @@ def evaluate_crossuser(model, window_size, window_inc, feature_list=['MAV'], fea
         
         if not regression:
             clf = EMGClassifier(model)
-        else:
-            clf = EMGRegressor(model)
+
         clf.fit(ds)
 
         del train_feats
@@ -480,8 +477,6 @@ def evaluate_weaklysupervised(model, window_size, window_inc, feature_list=['MAV
 
             if not regression:
                 clf = EMGClassifier(model)
-            else:
-                clf = EMGRegressor(model)
             
             if regression:
                 preds = clf.run(test_feats)

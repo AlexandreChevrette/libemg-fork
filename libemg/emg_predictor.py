@@ -1,12 +1,10 @@
 from collections import deque
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier, GradientBoostingClassifier, RandomForestRegressor
-from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import  RandomForestClassifier, GradientBoostingClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.multioutput import MultiOutputRegressor
 from sklearn.naive_bayes import GaussianNB
-from sklearn.neural_network import MLPClassifier, MLPRegressor
-from sklearn.svm import SVC, SVR
+from sklearn.neural_network import MLPClassifier
+from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from libemg.feature_extractor import FeatureExtractor
 from libemg.shared_memory_manager import SharedMemoryManager
@@ -17,19 +15,14 @@ import socket
 import random
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-import matplotlib.lines as mlines
-import matplotlib.patches as mpatches
 import time
 import inspect
 from scipy import stats
 import csv
 from abc import ABC, abstractmethod
-import re
-from matplotlib.animation import FuncAnimation
-from functools import partial
 
 from libemg.utils import get_windows
-from libemg.environments.controllers import RegressorController, ClassifierController
+from libemg.environments.controllers import ClassifierController
 
 class EMGPredictor:
     """Base class for EMG prediction. Parent class that shares common functionality between classifiers and regressors.
@@ -439,138 +432,6 @@ class EMGClassifier(EMGPredictor):
         plt.show()
     
 
-class EMGRegressor(EMGPredictor):
-    """The Offline EMG Regressor. 
-
-    This is the base class for any offline EMG regression. 
-
-    Parameters
-    ----------
-    model: string or custom regressor (must have fit and predict functions)
-        The type of machine learning model. Valid options include: 'LR' (Linear Regression), 'SVM' (Support Vector Machine), 'RF' (Random Forest),  
-        'GB' (Gradient Boost), 'MLP' (Multilayer Perceptron). Note, these models are all default sklearn 
-        models with no hyperparameter tuning and may not be optimal. Pass in custom regressors or parameters for more control.
-    model_parameters: dictionary, default=None
-        Mapping from parameter name to value based on the constructor of the specified model. Only used when a string is passed in for model.
-    random_seed: int, default=0
-        Constant value to control randomization seed.
-    fix_feature_errors: bool (default=False)
-        If True, the model will update any feature errors (INF, -INF, NAN) using the np.nan_to_num function.
-    silent: bool (default=False)
-        If True, the outputs from the fix_feature_errors parameter will be silenced. 
-    deadband_threshold: float, default=0.0
-        Threshold that controls deadband around 0 for output predictions. Values within this deadband will be output as 0 instead of their original prediction.
-    """
-    def __init__(self, model, model_parameters = None, random_seed = 0, fix_feature_errors = False, silent = False, deadband_threshold = 0.):
-        model_config = {
-            'LR': (LinearRegression, {}),
-            'SVM': (SVR, {"kernel": "linear"}),
-            'RF': (RandomForestRegressor, {"random_state": 0}),
-            'GB': (GradientBoostingRegressor, {"random_state": 0}),
-            'MLP': (MLPRegressor, {"random_state": 0, "hidden_layer_sizes": 126})
-        }
-        convert_to_multioutput = isinstance(model, str)
-        model = self._validate_model_parameters(model, model_parameters, model_config)
-        if convert_to_multioutput:
-            model = MultiOutputRegressor(model)
-        self.deadband_threshold = deadband_threshold
-        super().__init__(model, model_parameters, random_seed=random_seed, fix_feature_errors=fix_feature_errors, silent=silent)
-
-    
-    def run(self, test_data):
-        """Runs the regressor on a pre-defined set of training data.
-
-        Parameters
-        ----------
-        test_data: list
-            A dictionary, np.ndarray of inputs appropriate for the model of the EMGRegressor.
-        Returns
-        ----------
-        list
-            A list of predictions, based on the passed in testing features.
-        """
-        test_data = self._format_data(test_data)
-        predictions = self._predict(test_data)
-
-        # Set values within deadband to 0
-        deadband_mask = np.abs(predictions) < self.deadband_threshold
-        predictions[deadband_mask] = 0.
-
-        return predictions
-
-    def visualize(self, test_labels, predictions, single_axis = False):
-        """Visualize the decision stream of the regressor on test data.
-
-        You can call this visualize function to get a visual output of what the decision stream looks like.
-
-        Parameters
-        ----------
-        test_labels: np.ndarray
-            N x M array, where N = # samples and M = # DOFs, containing the labels for the test data.
-        predictions: np.ndarray
-            N x M array, where N = # samples and M = # DOFs, containing the predictions for the test data.
-        single_axis: bool
-            True if DOFs should be plotted on the same axis as different colours, False if DOFs should be plotted on separate axes.
-            Defaults to False.
-        """
-        assert len(predictions) > 0, 'Empty list passed in for predictions to visualize.'
-
-        # Formatting
-        plt.style.use('ggplot')
-        title = 'Decision Stream'
-        xlabel = 'Prediction Index'
-        ylabel = 'Model Output'
-        x = np.arange(test_labels.shape[0])
-        marker_size = 5
-
-        if single_axis:
-            fig, ax = plt.subplots(sharex=True, layout='constrained')
-            cmap = plt.cm.get_cmap('turbo')
-            colors = [cmap(idx / (test_labels.shape[1] - 1)) for idx in range(test_labels.shape[1])]
-            symbol_handles = [
-                mlines.Line2D([], [], color='black', marker='o', markersize=marker_size, linestyle='None', label='Predictions'),
-                mlines.Line2D([], [], color='black', markersize=marker_size, label='Labels')
-            ]
-            color_handles = []
-            for dof_idx, color in enumerate(colors):
-                ax.fill_between(x, test_labels[:, dof_idx], alpha=0.5, color=color)
-                ax.scatter(x, predictions[:, dof_idx], color=color, s=marker_size)
-                color_handles.append(mpatches.Patch(color=color, label=f"DOF {dof_idx}"))
-
-            symbol_legend = ax.legend(handles=symbol_handles, loc='lower left', bbox_to_anchor=(0, 1.))
-            ax.add_artist(symbol_legend)
-            ax.legend(handles=color_handles, loc='lower right', bbox_to_anchor=(1., 1.))
-            ax.set_title(title)
-            ax.set_xlabel(xlabel)
-            ax.set_ylabel(ylabel)
-        else:
-            fig, axs = plt.subplots(nrows=test_labels.shape[1], ncols=1, sharex=True, layout='constrained')
-            fig.suptitle(title)
-            fig.supxlabel(xlabel)
-            fig.supylabel(ylabel)
-            label_color = 'blue'
-            pred_color = 'black'
-            symbol_handles = [mpatches.Patch(color=label_color, label='Labels'), mlines.Line2D([], [], color=pred_color, marker='o', markersize=marker_size, linestyle='None', label='Predictions')]
-            for dof_idx, ax in enumerate(axs):
-                ax.set_title(f"DOF {dof_idx}")
-                ax.xaxis.grid(False)
-                ax.fill_between(x, test_labels[:, dof_idx], alpha=0.5, color=label_color)
-                ax.scatter(x, predictions[:, dof_idx], color=pred_color, s=marker_size)
-
-            fig.legend(handles=symbol_handles, loc='upper right')
-
-        plt.show()
-        
-
-    def add_deadband(self, threshold):
-        """Add a deadband around regressor predictions that will instead be output as 0.
-
-        Parameters
-        ----------
-        threshold: float
-            Deadband threshold. All output predictions from -threshold to +threshold will instead output 0.
-        """
-        self.deadband_threshold = threshold
 
 
 class OnlineStreamer(ABC):
@@ -1064,335 +925,80 @@ class OnlineEMGClassifier(OnlineStreamer):
         return data, counts
 
 
+
+
+
+
+
+
+
+class OnlineEMGClassifierNoODH():
+    """OnlineEMGClassifier with no online data handler, shared memory items are passed directly.
+       Only emg signals are used for classification. 
+       The prediction code is handled externally
+    """
+
     
-class OnlineEMGRegressor(OnlineStreamer):
-    """OnlineEMGRegressor.
+    def __init__(self, offline_classifier, window_size, window_increment, features, filter = None, 
+                 smi= None, output_format="predictions", feature_queue_length = 0):
+        if smi is None :
+            raise Exception("Must have smi for this class to work")
+        assert 'classifier_input' in [item[0] for item in smi], f"'model_input' tag not found in smi. Got: {smi}."
+        assert 'classifier_output' in [item[0] for item in smi], f"'model_output' tag not found in smi. Got: {smi}."
 
-    Given a EMGRegressor and additional information, this class will stream regression predictions over UDP or TCP in real-time.
-
-    Parameters
-    ----------
-    offline_regressor: EMGRegressor
-        An EMGRegressor object. 
-    window_size: int
-        The number of samples in a window. 
-    window_increment: int
-        The number of samples that advances before next window.
-    online_data_handler: OnlineDataHandler
-        An online data handler object.
-    features: list
-        A list of features that will be extracted during real-time regression. 
-    file_path: str, default = '.'
-        Location to store model outputs. Only used if file=True.
-    file: bool, default = False
-        True if model outputs should be stored in a file, otherwise False.
-    smm: bool, default = False
-        True if shared memory items should be tracked while running, otherwise False. If True, 'model_input' and 'model_output' are expected to be passed in as smm_items.
-    smm_items: list, default = None
-        List of shared memory items. Each shared memory item should be a list of the format: [name: str, buffer size: tuple, dtype: dtype]. 
-        When modifying this variable, items with the name 'model_output' and 'model_input' are expected to be passed in to track model inputs and outputs.
-        The 'model_input' item should be of the format ['model_input', (100, 1 + num_features), np.double]
-        The 'model_output' item should be of the format ['model_output', (100, 1 + num_dofs), np.double].
-        If None, defaults to:
-        [
-            ['model_output', (100, 3), np.double],  # timestamp, prediction 1, prediction 2... (assumes 2 DOFs)
-            ['model_input', (100, 1 + 32), np.double], # timestamp <- features ->
-        ]
-    port: int (optional), default = 12346
-        The port used for streaming predictions over UDP.
-    ip: string (optional), default = '127.0.0.1'
-        The ip used for streaming predictions over UDP.
-    std_out: bool (optional), default = False
-        If True, prints predictions to std_out.
-    tcp: bool (optional), default = False
-        If True, will stream predictions over TCP instead of UDP.
-    feature_queue_length: int (optional), default = 0
-        Number of windows to include in online feature queue. Used for time series models that make a prediction on a sequence of windows instead of raw EMG.
-        If the value is greater than 0, creates a queue and passes the data to the model as a 1 (window) x feature_queue_length x num_features. 
-        If the value is 0, no feature queue is created and predictions are made on a single window. Defaults to 0.
-    """
-    def __init__(self, offline_regressor, window_size, window_increment, online_data_handler, features, 
-                 file_path = '.', file = False, smm = False, smm_items = None,
-                 port = 12346, ip = '127.0.0.1', std_out = False, tcp = False, feature_queue_length = 0):
-        if smm_items is None:
-            # I think probably just have smm_items default to None and remove the smm flag. Then if the user wants to track stuff, they can pass in smm_items and a function to handle them?
-            smm_items = [
-                ['model_input', (100, 1 + 32), np.double], # timestamp <- features ->
-                ['model_output', (100, 3), np.double]  # timestamp, prediction 1, prediction 2... (assumes 2 DOFs)
-            ]
-        assert 'model_input' in [item[0] for item in smm_items], f"'model_input' tag not found in smm_items. Got: {smm_items}."
-        assert 'model_output' in [item[0] for item in smm_items], f"'model_output' tag not found in smm_items. Got: {smm_items}."
-        super(OnlineEMGRegressor, self).__init__(offline_regressor, window_size, window_increment, online_data_handler, file_path,
-                                                 file, smm, smm_items, features, port, ip, std_out, tcp, feature_queue_length)
-        self.smi = smm_items
-        
-    def run(self, block=True):
-        """Runs the regressor - continuously streams predictions over UDP or TCP.
-
-        Parameters
-        ----------
-        block: bool (optional), default = True
-            If True, the run function blocks the main thread. Otherwise it runs in a 
-            seperate process.
-        """
-        self.start_stream(block)
-
-    def stop_running(self):
-        """Kills the process streaming classification decisions.
-        """
-        self.process.terminate()
-
-    def write_output(self, model_input, window):
-        # Make prediction
-        predictions = self.predictor.run(model_input).squeeze()
-        
-        time_stamp = time.time()
-        if self.options['std_out']:
-            print(f"{predictions} {time.time()}")
-
-        # Write model output:
-        if self.options['file']:
-            if not 'file_handle' in self.files.keys():
-                self.files['file_handle'] = open(self.options['file_path'] + 'model_output.txt', "a", newline="")
-            writer = csv.writer(self.files['file_handle'])
-            feat_str = str(model_input[0]).replace('\n','')[1:-1]
-            row = [f"{time_stamp} {predictions} {feat_str}"]
-            writer.writerow(row)
-            self.files['file_handle'].flush()
-
-        if "smm" in self.options.keys():
-            #assumed to have "model_input" and "model_output" keys
-            # these are (1+)
-            # This could maybe be moved to OnlineStreamer instead
-            def insert_model_input(data):
-                input_size = self.options['smm'].variables['model_input']["shape"][0]
-                data[:] = np.vstack((np.hstack([time_stamp, model_input[0]]), data))[:input_size,:]
-                return data
-            def insert_model_output(data):
-                output_size = self.options['smm'].variables['model_output']["shape"][0]
-                data[:] = np.vstack((np.hstack([time_stamp, predictions]), data))[:output_size,:]
-                return data
-            self.options['smm'].modify_variable("model_input",
-                                                insert_model_input)
-            self.options['smm'].modify_variable("model_output",
-                                                insert_model_output)
-            self.options['model_smm_writes'] += 1
-
-        message = f"{str(predictions)} {str(time_stamp)}\n"
-        if not self.tcp:
-            self.sock.sendto(bytes(message, 'utf-8'), (self.ip, self.port))
-        else:
-            self.conn.sendall(str.encode(message))
-
-    def visualize(self, max_len = 50, legend = False):
-        """Plot a live visualization of the online regressor's predictions. Please note that the animation updates every 5 milliseconds,
-        so keep this in mind when choosing window size and increment. For example, a window increment that's too small may cause delay in the plotting
-        if the regressor is making predictions faster than the plot can be updated.
-
-        Parameters
-        ----------
-        max_len: int (optional), default = 50
-            Maximum number of predictions to plot at a time. Defaults to 50.
-        legend: bool (optional), default = False
-            True if a legend should be shown, otherwise False. Defaults to False.
-        """
-
-        plt.style.use('ggplot')
-        fig, ax = plt.subplots(layout='constrained')
-        fig.suptitle('Live Regressor Output', fontsize=16)
-        ax.set_xlabel('Time (s)')
-        ax.set_ylabel('Prediction')
-
-        controller = RegressorController(ip=self.ip, port=self.port)
-        controller.start()
-
-        # Wait for controller to start receiving data
-        predictions = None
-        while predictions is None:
-            predictions = controller.get_data('predictions')
-        cmap = cm.get_cmap('turbo', len(predictions))
-
-        plots = [ax.plot([], [], '.', color=cmap.colors[dof_idx], alpha=0.8)[0] for dof_idx in range(len(predictions))]
-
-        if legend:
-            handles = [mpatches.Patch(color=cmap.colors[dof_idx], label=f"DOF {dof_idx}") for dof_idx in range(len(predictions))]
-
-        start_time = time.time()
-
-        def update(frame, decision_horizon_predictions, timestamps):
-            data = controller.get_data(['predictions', 'timestamp'])
-            if data is None:
-                return
-            predictions, timestamp = data
-
-            timestamps.append(timestamp - start_time)
-            decision_horizon_predictions.append(predictions)
-
-            timestamps = timestamps[-max_len:]
-            decision_horizon_predictions = decision_horizon_predictions[-max_len:]
-
-            for dof_idx in range(len(predictions)):
-                plots[dof_idx].set_xdata(timestamps)
-                plots[dof_idx].set_ydata(np.array(decision_horizon_predictions)[:, dof_idx])
-
-            if legend:
-                ax.legend(handles=handles, loc='upper right')
-
-            ax.relim()
-            ax.autoscale_view()
-            return plots
-        
-        _ = FuncAnimation(fig, partial(update, decision_horizon_predictions=[], timestamps=[]), interval=5, blit=False)  # must return value or animation won't work
-        plt.show()
-
-
-class OnlineDiscreteClassifier:
-    """OnlineDiscreteClassifier.
-
-    Real-time discrete gesture classifier that detects individual gestures from EMG data.
-    Unlike continuous classifiers, this classifier is designed for detecting discrete,
-    transient gestures and outputs a prediction only when a gesture is detected.
-
-    Parameters
-    ----------
-    odh: OnlineDataHandler
-        An online data handler object for streaming EMG data.
-    model: object
-        A trained model with a predict_proba method (e.g., from libemg discrete models).
-    window_size: int
-        The number of samples in a window.
-    window_increment: int
-        The number of samples that advances before the next window.
-    null_label: int
-        The label corresponding to the null/no gesture class.
-    feature_list: list or None
-        A list of features that will be extracted during real-time classification.
-        Pass in None if the model expects raw windowed data.
-    template_size: int
-        The maximum number of samples to use for gesture template matching.
-    min_template_size: int, default=None
-        The minimum number of samples required before attempting classification.
-        If None, defaults to template_size.
-    key_mapping: dict, default=None
-        A dictionary mapping gesture names to keyboard keys for automated key presses.
-        Requires pyautogui to be installed.
-    feature_dic: dict, default=None
-        A dictionary containing feature extraction parameters.
-    gesture_mapping: dict, default=None
-        A dictionary mapping class indices to gesture names for debug output.
-    rejection_threshold: float, default=0.0
-        The confidence threshold (0-1). Predictions with confidence below this
-        threshold will be rejected and treated as null gestures.
-    debug: bool, default=True
-        If True, prints accepted gestures with timestamps and confidence values.
-    buffer_size: int, default=1
-        Number of successive predictions to buffer before accepting a gesture.
-        When buffer_size > 1, the mode (most frequent prediction) across the buffer
-        is used to determine the final prediction. This helps filter noisy predictions.
-    """
-
-    def __init__(
-        self,
-        odh,
-        model,
-        window_size,
-        window_increment,
-        null_label,
-        feature_list,
-        template_size,
-        min_template_size=None,
-        key_mapping=None,
-        feature_dic={},
-        gesture_mapping=None,
-        rejection_threshold=0.0,
-        debug=True,
-        buffer_size=1
-    ):
-        self.odh = odh
         self.window_size = window_size
         self.window_increment = window_increment
-        self.feature_list = feature_list
-        self.model = model
-        self.null_label = null_label
-        self.template_size = template_size
-        self.min_template_size = min_template_size if min_template_size is not None else template_size
-        self.key_mapping = key_mapping
-        self.feature_dic = feature_dic
-        self.gesture_mapping = gesture_mapping
-        self.rejection_threshold = rejection_threshold
-        self.debug = debug
-        self.buffer_size = buffer_size
-        self.prediction_buffer = deque(maxlen=buffer_size)
-        self.fe = FeatureExtractor()
+        self.features = features
+        self.predictor = offline_classifier
+        self.feature_queue_length = feature_queue_length
+        self.queue = deque(maxlen=feature_queue_length) if self.feature_queue_length > 0 else None
+        self.scaler = None
 
-    def run(self):
-        """Run the main gesture detection loop.
+        required_smi = [  # tags req
+            ["adapt_flag"],
+            ["active_flag"],   
+            ["classifier_output"],
+            ['classifier_input'], 
+            ['classifier_writes'], 
+            ['emg'],
+            ['emg_count']
+        ]
+        
+        self.smi = []
+        for smm_item in smi:
+            if smm_item[0] in required_smi:
+                self.smi.append(smm_item)
+        
+        self.output_format = output_format
+        self.previous_predictions = deque(maxlen=self.predictor.majority_vote)
+        self.filter = filter
+                    
+    def prepare_smm(self):
+        for i in self.smi:
+            if len(i) == 3:
+                i.append(Lock())
+        smm = SharedMemoryManager()
+        for item in self.smi:
+            smm.create_variable(*item)
+        self.smm = smm
 
-        Continuously monitors EMG data and detects discrete gestures. Uses predict_proba
-        to apply an optional rejection threshold. When buffer_size > 1, takes the mode
-        across multiple successive predictions before accepting a gesture.
 
-        The loop runs indefinitely until interrupted. When a gesture is detected and
-        accepted (passes rejection threshold and buffer consensus), the data handler
-        is reset and the prediction buffer is cleared.
-        """
-        expected_count = self.min_template_size
+   
+    def _get_data_helper(self):
+        data = self.smm.get_variable("emg")
+        N = self.window_size
 
-        while True:
-            # Get and process EMG data
-            _, counts = self.odh.get_data(self.window_size)
-            if counts['emg'][0][0] >= expected_count:
-                data, _ = self.odh.get_data(self.template_size)
-                emg = data['emg'][::-1]
-                feats = get_windows(emg, window_size=self.window_size, window_increment=self.window_increment)
-                if self.feature_list is not None:
-                    feats = self.fe.extract_features(self.feature_list, feats, array=True, feature_dic=self.feature_dic)
+        if self.filter is not None:
+            data = self.filter.filter(data)
+        if N != 0:
+            data   = data[:N,:]
 
-                probas = self.model.predict_proba(np.array([feats]))[0]
+        count = self.smm.get_variable("emg_count")
 
-                # Get the class with the highest probability
-                pred = np.argmax(probas)
-                confidence = probas[pred]
+        return data, count
+    
+    
 
-                # Check rejection threshold
-                if confidence < self.rejection_threshold:
-                    pred = self.null_label
 
-                # Add prediction to buffer
-                self.prediction_buffer.append(pred)
 
-                # Check if buffer is full and compute mode
-                if len(self.prediction_buffer) >= self.buffer_size:
-                    # Get mode of buffer predictions
-                    buffer_list = list(self.prediction_buffer)
-                    mode_result = stats.mode(buffer_list, keepdims=False)
-                    buffered_pred = mode_result[0]
 
-                    if buffered_pred != self.null_label:
-                        if self.debug:
-                            label = self.gesture_mapping[buffered_pred] if self.gesture_mapping else buffered_pred
-                            print(f"{time.time()} ACCEPTED: {label} (Conf: {confidence:.2f})")
-
-                        if self.key_mapping is not None:
-                            self._key_press(buffered_pred)
-
-                        self.odh.reset()
-                        self.prediction_buffer.clear()
-                        expected_count = self.min_template_size
-                    else:
-                        expected_count += self.window_increment
-                else:
-                    expected_count += self.window_increment
-
-    def _key_press(self, pred):
-        """Trigger a keyboard press for the predicted gesture.
-
-        Parameters
-        ----------
-        pred: int
-            The predicted class index to map to a key press.
-        """
-        import pyautogui
-        gesture_name = self.gesture_mapping[pred]
-        if gesture_name in self.key_mapping:
-            pyautogui.press(self.key_mapping[gesture_name])
