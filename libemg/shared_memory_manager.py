@@ -7,7 +7,7 @@ class SharedMemoryManager:
 
     def create_variable(self, tag, shape, type, lock):
         if tag in self.variables.keys():
-            print(f"Already have access to this variable: {tag}")
+            # print(f"Already have access to this variable: {tag}")
             return True
         
         # if tag exists already

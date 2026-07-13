@@ -214,9 +214,6 @@ class EmagerDummyStreamer(Process):
 
         # Create shared memory variables
         for item in self.shared_memory_items:
-            print("ITEM TYPE:", type(item))
-            print("ITEM:", item)
-            print("LEN:", len(item))
             self.smm.create_variable(*item)
 
         for item in self.shared_memory_items:

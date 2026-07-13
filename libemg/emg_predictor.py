@@ -955,13 +955,13 @@ class OnlineEMGClassifierNoODH():
         self.scaler = None
 
         required_smi = [  # tags req
-            ["adapt_flag"],
-            ["active_flag"],   
-            ["classifier_output"],
-            ['classifier_input'], 
-            ['classifier_writes'], 
-            ['emg'],
-            ['emg_count']
+            "adapt_flag",
+            "active_flag",   
+            "classifier_output",
+            'classifier_input', 
+            'classifier_writes', 
+            'emg',
+            'emg_count'
         ]
         
         self.smi = []
@@ -977,10 +977,10 @@ class OnlineEMGClassifierNoODH():
         for i in self.smi:
             if len(i) == 3:
                 i.append(Lock())
-        smm = SharedMemoryManager()
+        self.smm = SharedMemoryManager()
         for item in self.smi:
-            smm.create_variable(*item)
-        self.smm = smm
+            self.smm.create_variable(*item)
+
 
 
    
