@@ -12,7 +12,7 @@ class SharedMemoryManager:
         
         # if tag exists already
         if self.find_variable(tag, shape, type, lock):
-            print(f'{tag} already exists in shared memory, found variable.')
+            # print(f'{tag} already exists in shared memory, found variable.')
             return True
         
         try:

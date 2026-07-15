@@ -3,7 +3,7 @@ import numpy as np
 
 from multiprocessing import Process, Event, Lock
 from libemg._streamers._emagerv3_streamer import EmagerV3Streamer
-from libemg._streamers._rfid_streamer import RfidStreamer
+from libemg._streamers._rfid_streamer import RFIDStreamer
 from libemg._streamers._dummy_data_streamer import EmagerDummyStreamer
 
 def emagerv3_streamer(shared_memory_items=None, **kwargs):
@@ -69,7 +69,7 @@ def rfid_streamer(shared_memory_items=None):
         if len(item) == 3:
             item.append(Lock())
 
-    rfidProcess = RfidStreamer(shared_memory_items)
+    rfidProcess = RFIDStreamer(shared_memory_items)
     rfidProcess.start()
     return rfidProcess, shared_memory_items
 
