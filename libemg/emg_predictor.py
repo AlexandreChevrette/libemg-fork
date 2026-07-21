@@ -961,7 +961,9 @@ class OnlineEMGClassifierNoODH():
             'classifier_input', 
             'classifier_writes', 
             'emg',
-            'emg_count'
+            'emg_count',
+            'classifier_embeddings',
+            'prototype_embeddings'
         ]
         
         self.smi = []

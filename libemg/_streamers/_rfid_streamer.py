@@ -15,7 +15,7 @@ from libemg.shared_memory_manager import SharedMemoryManager
 RFID_TAGS = {
     "004255E8": 0b01000001,   # No object
     "0041A995": 0b00100010,   # Cup
-    "ABCDEF12": 0b00000100,   # Spoon
+    "00000000": 0b00000000,   # Spoon
     "12345678": 0b00001000,   # Bottle
 }
 
@@ -26,25 +26,13 @@ class RFID:
         self.com_name = com_name
         self.vid_pid = vid_pid
 
-        ports = list(serial.tools.list_ports.comports())
-        com_port = None
         com_port = "COM3"  # Default COM port for Windows
 
-        for p in ports:
-            if self.com_name is None:
-                if (p.vid, p.pid) == self.vid_pid:
-                    com_port = p.device
-                    break
-            else:
-                if self.com_name in (p.description or ""):
-                    com_port = p.device
-                    break
-
-        if com_port is None:
-            raise RuntimeError("Could not find RFID serial port.")
-        print(f"Using RFID serial port: {com_port}")
-
-        self.ser = serial.Serial(com_port, baud_rate, timeout=0.1)
+        while True:
+            self.ser = serial.Serial(com_port, baud_rate, timeout=0.1)
+            if self.ser.is_open:
+                
+                break
 
     def close(self):
         self.ser.close()
