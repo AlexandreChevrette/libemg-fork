@@ -29,10 +29,12 @@ class RFID:
         com_port = "COM3"  # Default COM port for Windows
 
         while True:
-            self.ser = serial.Serial(com_port, baud_rate, timeout=0.1)
-            if self.ser.is_open:
-                
-                break
+            try:
+                self.ser = serial.Serial(com_port, baud_rate, timeout=0.1)
+                if self.ser.is_open:
+                    break
+            except serial.SerialException:
+                time.sleep(1)  # Wait a bit before retrying
 
     def close(self):
         self.ser.close()
